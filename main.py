@@ -1,9 +1,11 @@
-import os
+#по тз можно использовать реквест
 import requests
+import os
 import json
 import datetime
 
 
+# Возвращает список задач, которые висят на конкретном юзере из общего списка
 def get_users_todolist(id, todos):
     result = []
     for todo in todos:
@@ -13,8 +15,12 @@ def get_users_todolist(id, todos):
     return result
 
 
+# Возвращает список выполненных/невыполненных задач в зависимости от status
 def get_sorted_titles_by_status(usersTodolist, status: bool):
     result = []
+    if len(usersTodolist) == 0:
+        return []
+
     for todo in usersTodolist:
         if status == todo['completed']:
             if len(todo['title']) < 48:
@@ -24,12 +30,16 @@ def get_sorted_titles_by_status(usersTodolist, status: bool):
     return result
 
 
+# Возвращает текущее время в том формате, который должен быть указан в отчете по тз
 def get_current_datetime():
     current_datetime = datetime.datetime.now()
     result = current_datetime.strftime('%d.%m.%Y %H:%M')
     return result
 
 
+# Возвращает время создания отчета из файла в том формате, который нужен для именования старых файлов
+# Умышленно заменяю двоеточия на точки во времени, чтобы некоторые файловые системы не ругались
+# Можно было использовать временя изменения файла path.getmtime(), но мало ли кто-то руками будет менять отчеты
 def get_datetime_from_file(filename):
     f = open(filename, 'r')
     lines = f.readlines()
@@ -40,6 +50,7 @@ def get_datetime_from_file(filename):
     return result
 
 
+# Защищаем от обрыва сети
 try:
     usersResponse = requests.get('https://json.medrating.org/users')
     todosResponse = requests.get('https://json.medrating.org/todos')
@@ -50,6 +61,7 @@ users = json.loads(usersResponse.text)
 todos = json.loads(todosResponse.text)
 
 for user in users:
+    # Формируем построчно отчет в result
     result = 'Отчет для {company}.\n'.format(company=user['company']['name'])
     result += '{name}<{email}> {datetime} \n'.format(name=user['name'],
                                                      email=user['email'],
@@ -65,23 +77,26 @@ for user in users:
     for todo in uncompletedTodo:
         result += todo + '\n'
 
+    # Переводим отчет в разряд старых
+    # Если имя занято(например, скрипт запускают чаще раза в минуту), то добавляем секунды в название
     filename = 'tasks/{username}.txt'.format(username=user['username'])
     os.makedirs('tasks', exist_ok=True)
-
     if os.path.isfile(filename):
         newFilename = 'tasks/old_{username}_{datetime}.txt'.format(username=user['username'],
                                                                    datetime=get_datetime_from_file(filename))
         if os.path.isfile(newFilename):
             second = datetime.datetime.now()
-            newFilename = 'tasks/old_{username}_{datetime}.{second}.txt'\
+            newFilename = 'tasks/old_{username}_{datetime}.{second}.txt' \
                 .format(username=user['username'],
                         datetime=get_datetime_from_file(filename),
                         second=second.second)
         os.rename(filename, newFilename)
+
+    # Пытаемся записать новейший отчет, в случае неудачи откатываем в старый
     try:
         f = open(filename, 'w')
         f.writelines(result)
         f.close()
     except Exception:
-        f.close()
+        os.rename(newFilename, filename)
         raise Exception
